@@ -1,0 +1,9 @@
+﻿StateNode #node-border
+{
+    border-color: darkred;
+}
+
+StateMachineNode #node-border 
+{
+    border-color: darkred;
+}

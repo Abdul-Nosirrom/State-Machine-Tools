@@ -6,58 +6,103 @@ using System.ComponentModel;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.Events;
+using Random = System.Random;
 
-
+#region Character Classes
 /*
  * To consolidate all FSM into little character containers in order to simplify state management
  */
 [System.Serializable]
 public class Character
 {
-    // The lists below are all attributes associated with a character
-    // When it comes to AI, we might change what the character attribute is, probably through inheritance
-    // and setting similar names where rawInput overrides with goals or something we'll see
+
     public string name;
+    
+    // Testing new way of calling in animations, to automate some things
+    public RuntimeAnimatorController animator;
+    [HideInInspector] public Texture2D characterThumbnail;
+    
     public List<CharacterState> characterStates;
     public List<EventScript> eventScripts;
 
-    public List<MoveList> moveLists;
+    
+    public List<StateMachine> stateMachines;
     
     // SFX and VFX associations
     public List<GameObject> globalPrefabs;
     
-    public int currentMoveListIndex;
-    
     // Editor Data fields
     [HideInInspector] public int currentScriptIndex;
     [HideInInspector] public int currentStateIndex;
-    [HideInInspector] public int currentCommandStateIndex;
-
+    [HideInInspector] public int currentStateMachineIndex;
+    
     public Character()
     {
-        name = "<NEW CHARACTER>";
         characterStates = new List<CharacterState>();
         eventScripts = new List<EventScript>();
-        moveLists = new List<MoveList>();
+        stateMachines = new List<StateMachine>();
         globalPrefabs = new List<GameObject>();
         
         // Initialize Data
         characterStates.Add(new CharacterState());
         eventScripts.Add(new EventScript());
-        moveLists.Add(new MoveList());
-        
-        // Initialize indices to zero
-        currentScriptIndex = 0;
-        currentStateIndex = 0;
-        currentMoveListIndex = 0;
-        currentCommandStateIndex = 0;
+        //stateMachines.Add(new StateMachine());
+
+    }
+
+    public StateMachine GetEntryFSM()
+    {
+        foreach (var FSM in stateMachines)
+        {
+            if (FSM.isEntryState) return FSM;
+        }
+
+        return null;
+    }
+
+    public void SetAsEntryFSM(StateMachine entryFSM)
+    {
+        foreach (var FSM in stateMachines)
+        {
+            FSM.isEntryState = false;
+        }
+
+        entryFSM.isEntryState = true;
     }
 }
+
+public class PlayableCharacter : Character
+{
+    public new List<StateMachine> stateMachines;
+    public PlayableCharacter() : base()
+    {
+        name = "<NEW PLAYABLE CHARACTER>";
+    }
+}
+
+public class AICharacter : Character
+{
+    public new List<StateMachine> stateMachines;
+
+    public AICharacter() : base()
+    {
+        name = "<NEW AI CHARACTER>";
+    }
+}
+
+#endregion
 
 [System.Serializable]
 public class CharacterState
 {
     public string stateName;
+
+    /// <summary>
+    /// Animation curve associated with a state definition to allow for quick modifications to the animations speed
+    /// to get better gameplay feel if need be.
+    /// To keep the animation speed as is, keep this animation curve at a constant 1
+    /// </summary>
+    public AnimationCurve animCurve;
 
     [HideInInspector] 
     public int stateIndex;
@@ -68,79 +113,28 @@ public class CharacterState
     public bool loop;
     public float blendRate = 0.1f;
 
-    public bool groundedReq;
-    public bool railReq;
-    public bool wallReq;
-    
+    public List<StateEvent> onStateEnterEvents;
+    public List<StateEvent> onStateExitEvents;
     public List<StateEvent> events;
-    public List<Interrupt> interrupts;
     public List<Attack> attacks;
 
     public CharacterState()
     {
         stateName = "<NEW STATE>";
+        events = new List<StateEvent>();
+        onStateEnterEvents = new List<StateEvent>();
+        onStateExitEvents = new List<StateEvent>();
+        attacks = new List<Attack>();
+        attacks.Add(new Attack());
+        
+        // Set default animation curve to constant
+        // The timing here is normalized/ in units of 1 "state length"
+        animCurve = AnimationCurve.Constant(0, 1, 1);
     }
-
-    public bool ConditionsMet(CharacterStateManager character)
-    {
-        // CHECK DIFFERENT CONDITIONS LIKE COOLDOWNS/SPECIAL METER/ETC
-        // SO far only one check for moves that require you to be grounded
-        bool groundCheck = !groundedReq || character.myController.movement.isOnGround;
-        bool railCheck = !railReq || character.myController.canRailGrind;
-        bool wallCheck = !wallReq || character.myController.validWall;
-
-        return groundCheck && railCheck && wallCheck;
-    }
-
-    public int CheckInterrupts(CharacterStateManager character)
-    {
-        foreach (Interrupt interrupt in interrupts)
-        {
-            switch (interrupt.type)
-            {
-                case Interrupt.InterruptTypes.GROUND:
-                    if (character.myController.movement.isOnGround)
-                        return interrupt.state;
-                    break;
-                case Interrupt.InterruptTypes.RAIL_END:
-                    if (!character.myController.canRailGrind)
-                        return interrupt.state;
-                    break;
-                case Interrupt.InterruptTypes.KEY_RELEASE:
-                    break;
-                case Interrupt.InterruptTypes.WALL_END:
-                    if (!character.myController.canWallRun)
-                        return interrupt.state;
-                    break;
-                case Interrupt.InterruptTypes.WALL_START:
-                    if (character.myController.canWallRun)
-                        return interrupt.state;
-                    break;
-            }
-        }
-
-        return -1;
-    }
+    
 }
 
-[System.Serializable]
-public class Interrupt
-{
-    [HideInInspector]
-    public enum InterruptTypes
-    {
-        GROUND,
-        RAIL_END,
-        KEY_RELEASE,
-        WALL_END,
-        WALL_START
-    }
-
-    public InterruptTypes type;
-
-    [IndexedItem(IndexedItemAttribute.IndexedItemType.STATES)]
-    public int state;
-}
+#region State Events
 
 [System.Serializable]
 public class StateEvent
@@ -154,65 +148,33 @@ public class StateEvent
     [IndexedItem(IndexedItemAttribute.IndexedItemType.SCRIPTS)]
     public int script;
 
-    
-    public List<EventParameter> parameters;
+    public List<GenericValueWrapper> parameters;
+
+    // Add conditions to event, constrain it to 1 condition only as I don't expect any more to be necessary
+    // Example of this, perform an event so long as a button is held (e.g jumping)
+    public bool hasCondition;
+    public Conditions condition;
 
     public StateEvent()
     {
         active = true;
-        parameters = new List<EventParameter>();
-    }
-}
-
-[System.Serializable]
-public class ParameterType
-{
-    public float floatVal;
-    public AnimationCurve curveVal;
-    public bool boolVal;
-    
-    public SupportedTypes paramType;
-
-    public ParameterType()
-    {
-        //floatVal = 0;
-        curveVal = new AnimationCurve();
-        //boolVal = false;
-
-        //paramType = SupportedTypes.FLOAT;
-    }
-    
-    public enum SupportedTypes
-    {
-        FLOAT,
-        BOOL,
-        ANIMATION_CURVE
+        hasCondition = false;
+        parameters = new List<GenericValueWrapper>();
+        condition = null;
     }
 
-    public object GetVal()
+    public List<object> GetParamObjectList()
     {
-        switch (paramType)
+        List<object> objectParams = new List<object>();
+        foreach (var param in parameters)
         {
-            case ParameterType.SupportedTypes.FLOAT:
-                return floatVal;
-            case ParameterType.SupportedTypes.BOOL:
-                return boolVal;
-            case ParameterType.SupportedTypes.ANIMATION_CURVE:
-                return curveVal;
-            default:
-                return null;
+            objectParams.Add(param.GetValue());
         }
+
+        return objectParams;
     }
 }
 
-[System.Serializable]
-public class EventParameter
-{
-    public string name;
-
-    public ParameterType val = new ParameterType();
-    
-}
 
 [System.Serializable]
 public class EventScript
@@ -222,9 +184,14 @@ public class EventScript
 
     public string eventName = "< NEW EVENT SCRIPT >";
     
-    public List<EventParameter> parameters = new List<EventParameter>();
+    public StateEventObject eventScript;
     
+    //[HideInInspector, SerializeReference] public List<object> baseParamList;
+    [HideInInspector] public List<GenericValueWrapper> baseParamList;
 }
+
+#endregion
+
 /// <summary>
 /// Associates an input with a state
 /// So "Space" is an input command for the state "Jump"
@@ -234,35 +201,14 @@ public class InputCommand
 {
 
     [IndexedItem(IndexedItemAttribute.IndexedItemType.RAW_INPUTS)]
-    public int input;
+    [HideInInspector] public int input;
     
     [IndexedItem(IndexedItemAttribute.IndexedItemType.MOTION_COMMAND)]
-    public int motionCommand;
+    [HideInInspector] public int motionCommand;
 
     [IndexedItem(IndexedItemAttribute.IndexedItemType.STATES)]
     public int state;
     
-    
-    public List<int> inputs;
-}
-
-/// <summary>
-/// Self fucking explanatory
-/// Different move lists for different characters or weapons/items
-/// A list of command states basically
-/// </summary>
-[System.Serializable]
-public class MoveList
-{
-    public string name;
-    public List<CommandState> commandStates;
-
-    public MoveList()
-    {
-        name = "<NEW MOVE LIST>";
-        commandStates = new List<CommandState>();
-        commandStates.Add(new CommandState());
-    }
 }
 
 
@@ -273,93 +219,130 @@ public class MoveList
 /// commands that can be performed and different ones when in air, on walls, etc...
 /// </summary>
 [System.Serializable]
-public class CommandState
+public class StateMachine
 {
     public string stateName;
+    public Vector2 graphPosition;
 
-    //Flags
-    public bool aerial;
-    public bool onRail;
-    public bool onWall;
+    /// <summary>
+    /// How to handle these is the tricky part. Should keep it to 1 condition per-FSM, but also they shouldn't
+    /// overlap (e.g Grounded Vs Air obviously don't overlap)
+    /// </summary>
+    public Conditions FSMCondition;
 
+    public int priority;    // Priority is set to ensure proper selection of FSM in case of overlapping conditions
+
+    public bool isEntryState;
     //Explicit State
-    public bool explicitState;
-    [IndexedItem(IndexedItemAttribute.IndexedItemType.STATES)]
-    public int state;
-    
+    //public bool explicitState;
+    //[IndexedItem(IndexedItemAttribute.IndexedItemType.STATES)]
+    //public int state;
 
-    public List<CommandStep> commandSteps;
+    public GenericDictionary<InstanceID, StateInstance> stateInstances;
+
+    // Use this to avoid using the zero index of the above list as a dummy state
+    // Put states that arent followups of other states here
+    public List<InstanceID> entryStateInstances;
+
+    // Could add a "From Any State" that always exists
 
     [HideInInspector]
-    public List<int> omitList;
+    public GenericDictionary<InstanceID, StateInstance> statesFollowedUp;
 
-    [HideInInspector]
-    public List<int> nextFollowups;
-
-    public CommandState()
+    public StateMachine()
     {
-        commandSteps = new List<CommandStep>();
+        stateInstances = new GenericDictionary<InstanceID, StateInstance>();
+        entryStateInstances = new List<InstanceID>();
         stateName = "<NEW COMMAND STATE>";
+        graphPosition = Vector2.zero;
+        FSMCondition = new Conditions();
+        priority = 0;
+        isEntryState = false;
     }
 
-    public CommandStep AddCommandStep()
+    public StateInstance AddState()
     {
-        
-        foreach(CommandStep s in commandSteps)
-        {
-            if (!s.activated) { s.activated = true; return s; }
-        }
-        CommandStep nextStep = new CommandStep(commandSteps.Count);
+        StateInstance nextStep = new StateInstance(new InstanceID());
         nextStep.activated = true;
-        commandSteps.Add(nextStep);
+        stateInstances.Add(nextStep.ID, nextStep);
         return nextStep;
     }
 
-    public void RemoveChainCommands(int _id)
+    public void AddExistingState(StateInstance state)
     {
-        if (_id == 0) { return; }
-        commandSteps[_id].activated = false;
-        commandSteps[_id].followUps = new List<int>();
+        stateInstances.Add(state.ID, state);
+        // New state presumably not connected to anything else at the instance it's added, so:
+        entryStateInstances.Add(state.ID);
+
+        state.activated = true;
     }
 
+    public void RemoveState(StateInstance state)
+    {
+        if (stateInstances.ContainsKey(state.ID))
+        {
+            stateInstances.Remove(state.ID);
+        }
+
+        if (entryStateInstances.Contains(state.ID))
+        {
+            entryStateInstances.Remove(state.ID);
+        }
+
+        foreach (StateInstance states in stateInstances.Values)
+        {
+            if (states.followUps.ContainsKey(state.ID))
+            {
+                states.RemoveFollowUp(state.ID);
+            }
+        }
+
+        state.activated = false;
+    }
+
+    public void ResetStateInstanceCounters()
+    {
+        foreach (var state in stateInstances.Values) state.numTimesEntered = 0;
+    }
+    
+    /// <summary>
+    /// Clean up and verify entry state instances
+    /// </summary>
     public void CleanUpBaseState()
     {
-        
-        omitList = new List<int>();
+        // Check for which states are independent (e.g no state has it as a followup) - add those to the entry list
+        statesFollowedUp = new GenericDictionary<InstanceID, StateInstance>();
 
-        for (int s = 1; s < commandSteps.Count; s++)
+        if (stateInstances.Count == 0)
         {
-            for (int f = 0; f < commandSteps[s].followUps.Count; f++)
+            if (entryStateInstances.Count != 0) entryStateInstances.Clear();
+            return;
+        }
+        foreach (StateInstance state in stateInstances.Values)
+        {
+            foreach (InstanceID transition in state.followUps.Keys)
             {
-                omitList.Add(commandSteps[s].followUps[f]);
+                if (!stateInstances.ContainsKey(transition))
+                {
+                    Debug.Log("ID Not Found in: " + stateName);
+                    Debug.Log("State ID: " + transition.ID);
+                }
+                if (statesFollowedUp.ContainsKey(stateInstances[transition].ID)) continue;
+                
+                statesFollowedUp.Add(stateInstances[transition].ID, stateInstances[transition]);
             }
         }
 
-        nextFollowups = new List<int>();
-        for (int s = 1; s < commandSteps.Count; s++)
+        foreach (StateInstance entryState in stateInstances.Values)
         {
-            bool skip = false;
-            for (int m = 0; m < omitList.Count; m++)
-            {
-                if (omitList[m] == s) { skip = true; }
-                if (omitList[m] >= commandSteps.Count) { skip = true; }
-                if (!commandSteps[s].activated) { skip = true;}
-            }
-            if (!skip) { nextFollowups.Add(s); }
-
+            if (statesFollowedUp.ContainsKey(entryState.ID)) entryStateInstances.Remove(entryState.ID);
+            else if (!entryStateInstances.Contains(entryState.ID)) entryStateInstances.Add(entryState.ID);
         }
-
-        commandSteps[0].followUps = nextFollowups;
-
     }
-
-    public void CleanUpFollowups()
+    
+    public void UpdateGraphPosition(Vector2 pos)
     {
-        for (int s = 0; s < commandSteps.Count; s++)
-        {
-            omitList = new List<int>();
-        }
-            
+        graphPosition = pos;
     }
 
 }
@@ -368,68 +351,174 @@ public class CommandState
 /// Sub state of the command state
 /// </summary>
 [System.Serializable]
-public class CommandStep
+public class StateInstance
 {
-    public int idIndex;
+    [HideInInspector] public InstanceID ID;
+    public Vector2 graphPosition;
+
+    public bool toOtherCommandState;
+    public int stateMachineTransition;
+    public InstanceID otherStateMachineInstanceID;
 
     public InputCommand command;
 
-    public bool holdButton;
+    public bool activated;
 
-    public Conditions conditions;
+    public List<Interrupts> interrupts;
+
+    // A way to limit the number of times a state can be entered while in the state machine
+    // Sort of a transient condition
+    public bool limitTimesToEnter = false;
+    public int numTimesToEnter = 1;
+    [HideInInspector] public int numTimesEntered = 0;
     
-    public List<int> followUps;
+    // AI Specific parameter
+    [Range(0,1)]
+    [HideInInspector] public float probability;
+    
+    public GenericDictionary<InstanceID, TransitionCondition> followUps;
 
     [Tooltip("Strict refers to a step that cannot be cancelled")]
     public bool strict;
-
-    [HideInInspector] 
-    public Rect myRect;
-
-    public bool activated;
+    
+    
     // Priority is so if we have directional attacks, we don't instantly move to the state w/
     // the button press and check if the directional input belongs to a valid state
     public int priority;
-
-    public void AddFollowUp(int _nextID)
+    public bool AddFollowUp(StateInstance _nextState, TransitionCondition _condition = null)
     {
-        if (_nextID == 0 || idIndex == _nextID) return;
+        if (this == _nextState || followUps.ContainsKey(_nextState.ID)) return false;
 
-        for (int i = 0; i < followUps.Count; i++)
-        {
-            if (followUps[i] == _nextID) return;
-        }
-        followUps.Add(_nextID);
+        followUps.Add(_nextState.ID, _condition ?? new TransitionCondition());
+
+        return true;
     }
 
-    public CommandStep(int _index)
+    public void RemoveFollowUp(StateInstance _followUp)
     {
-        idIndex = _index;
-        followUps = new List<int>();
+        followUps.Remove(_followUp.ID);
+    }
+
+    public void RemoveFollowUp(InstanceID _ID)
+    {
+        followUps.Remove(_ID);
+    }
+
+    public StateInstance(InstanceID _id)
+    {
+        ID = _id;
+        followUps = new GenericDictionary<InstanceID, TransitionCondition>();
+        
         command = new InputCommand();
-        conditions = new Conditions();
-        myRect = new Rect(50, 50, 200, 200);
+        probability = 1;
+        interrupts = new List<Interrupts>();
+        
+        toOtherCommandState = false;
+    }
+
+    public void UpdateGraphPosition(Vector2 pos)
+    {
+        graphPosition = pos;
+    }
+    
+}
+
+#region State Conditions Classes
+
+public abstract class Condition : ScriptableObject
+{
+    public string description;
+    public abstract bool CheckCondition(StateManager state);
+}
+
+[System.Serializable]
+public class TransitionCondition
+{
+    public List<Conditions> conditionsList;
+    public Vector2 graphPos;
+    
+    public TransitionCondition()
+    {
+        conditionsList = new List<Conditions>();
+    }
+    
+    public bool CheckConditions(StateManager stateManager)
+    {
+        foreach (Conditions condi in conditionsList)
+        {
+            if (!condi.condition.CheckCondition(stateManager)) return false;
+        }
+
+        return true;
     }
 }
 
-/// <summary>
-/// A series of boolean conditions to specify what must be satisfied to enter followup command step
-/// </summary>
 [System.Serializable]
 public class Conditions
 {
-    public bool
-        grounded,
-        distToTargetValid,
-        onRail,
-        inAir,
-        onWall,
-        holdButton,
-        test1,
-        test2,
-        test3,
-        test4,
-        test5,
-        test6;
-    
+    public Condition condition;
 }
+#endregion
+
+#region State Interrupt Classes
+
+public abstract class Interrupt : ScriptableObject
+{
+    public string description;
+    public abstract bool CheckInterrupt(StateManager stateManager);
+}
+
+/// <summary>
+/// Interrupts are ABSOLUTE, meaning they supersede everything, if interrupts are satisfied, will transition to its
+/// followup state regardless. This should suffice, and hopefully no issues arise due to this
+/// </summary>
+[System.Serializable] //SERIALIZATION ISSUE FIX PLEASE
+public class Interrupts
+{
+    public Interrupt interrupt;
+    public InstanceID followUpState;
+
+    public Interrupts()
+    {
+        followUpState = new InstanceID();
+        followUpState.ID = "";
+    }
+
+    public void SetFollowUp(InstanceID followUp)
+    {
+        followUpState = followUp;
+    }
+
+    public bool CheckInterrupts(StateManager stateManager)
+    {
+        return interrupt.CheckInterrupt(stateManager) || interrupt == null;
+    }
+}
+
+#endregion
+
+
+#region Utilities
+
+[System.Serializable]
+public class InstanceID : IEquatable<InstanceID>
+{
+    public string ID;
+    public InstanceID()
+    {
+        ID = Guid.NewGuid().ToString();
+    }
+
+    public bool Equals(InstanceID eq)
+    {
+        return ID.Equals(eq.ID);
+    }
+
+    public override int GetHashCode()
+    {
+        return 0;
+    }
+}
+
+#endregion
+

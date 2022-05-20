@@ -1,0 +1,5 @@
+﻿.scope
+{
+    border-color: darkred;
+    border-width: 2;
+}

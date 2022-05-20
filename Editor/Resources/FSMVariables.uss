@@ -1,0 +1,11 @@
+:root
+{
+    --fsm-colors-grid-light-grey-1: #2b2b2b;
+    --fsm-colors-grid-light-grey-2: rgba(51,51,51,0.4);
+    --fsm-colors-grid-light-grey-3: rgba(51,51,51,1);
+    
+    --fsm-colors-highlight-red: rgba(51,0,0,1);
+    --fsm-colors-highligh-green: rgba(0,51,0,1);
+    
+    --fsm-metrics-grid-25: 25;
+}

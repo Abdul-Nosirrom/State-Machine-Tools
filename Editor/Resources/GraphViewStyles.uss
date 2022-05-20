@@ -1,0 +1,7 @@
+GridBackground
+{
+    --grid-background-color: var(--fsm-colors-grid-light-grey-1);
+    --line-color: var(--fsm-colors-grid-light-grey-2);
+    --thick-line-color: var(--fsm-colors-grid-light-grey-3);
+    --spacing: 25;
+}

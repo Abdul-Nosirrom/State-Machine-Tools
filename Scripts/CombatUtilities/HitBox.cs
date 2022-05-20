@@ -3,7 +3,7 @@ using UnityEngine;
 
 public class HitBox : MonoBehaviour
 {
-    private CharacterStateManager character;
+    private StateManager character;
 
     [IndexedItem(IndexedItemAttribute.IndexedItemType.STATES)]
     public int stateIndex;
@@ -12,7 +12,7 @@ public class HitBox : MonoBehaviour
     // Use this for initialization
     void Start ()
     {
-        character = transform.root.GetComponent<CharacterStateManager>();
+        character = transform.root.GetComponent<StateManager>();
     }
 
     void OnTriggerStay(Collider other)
@@ -21,8 +21,9 @@ public class HitBox : MonoBehaviour
         {
             if (character.hitActive > 0)
             {
-                CharacterStateManager victim = other.transform.root.GetComponent<CharacterStateManager>();
-                victim.GetHit(character);
+                HitReactor victim = other.transform.root.GetComponent<HitReactor>();
+                if (victim != null)
+                    victim.GetHit(character);
             }
             //Debug.Log("HIT!");
         }

@@ -29,15 +29,17 @@ public static class Helpers
     private static List<RaycastResult> _results;
     /// <summary>
     /// Helper to check whether the cursor is over ANY UI element
+    ///
+    /// NEED TO MODIFY FOR NEW INPUT SYSTEM!!!!!!!!!!
     /// </summary>
     /// <returns></returns>
-    public static bool IsOverUI()
-    {
-        _eventDataCurrentPosition = new PointerEventData(EventSystem.current) {position = Input.mousePosition};
-        _results = new List<RaycastResult>();
-        EventSystem.current.RaycastAll(_eventDataCurrentPosition, _results);
-        return _results.Count > 0;
-    }
+    //public static bool IsOverUI()
+    //{
+    //    _eventDataCurrentPosition = new PointerEventData(EventSystem.current) {position = Input.mousePosition};
+    //    _results = new List<RaycastResult>();
+    //    EventSystem.current.RaycastAll(_eventDataCurrentPosition, _results);
+    //    return _results.Count > 0;
+    //}
     
     /*---------------------------------------------------------------------------*/
     /// <summary>

@@ -18,4 +18,7 @@ public class Attack
     public Vector3 hitBoxScale;
 
     public float cancelWindow;
+    
+    // Store what's been hit in current attack
+    public GenericDictionary<string, bool> confirmedHits;
 }

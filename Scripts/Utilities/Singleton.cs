@@ -7,6 +7,7 @@
  */
 
 using System;
+using UnityEditor;
 using UnityEngine;
 
 /// <summary>
@@ -38,9 +39,61 @@ public abstract class Singleton<T> : StaticInstance<T> where T : MonoBehaviour
 {
     protected override void Awake()
     {
-        if (Instance != null) Destroy(gameObject);
+        if (Instance != null && Application.isPlaying) Destroy(gameObject);
         base.Awake();   
     }
+}
+
+/// <summary>
+/// Used for when instance needs to be accessed in editor - singleton has ExecuteInEditor attribute
+/// </summary>
+/// <typeparam name="T"></typeparam>
+public abstract class EditorSingleton<T> : MonoBehaviour where T : MonoBehaviour
+{
+    private static T _instance;
+    private static T _editorInstance;
+    
+    public static T Instance
+    {
+        get
+        {
+            if (_instance == null && _editorInstance == null)
+            {
+                _instance = GameObject.FindObjectOfType<T>();
+                _editorInstance = _instance;
+            }
+            if (Application.isPlaying) return _instance;
+            else return _editorInstance;
+        }
+    }
+
+    private void OnEnable()
+    {
+        //AssemblyReloadEvents.afterAssemblyReload += Awake;
+    }
+
+    private void OnDisable()
+    {
+        //AssemblyReloadEvents.afterAssemblyReload -= Awake;
+    }
+
+    protected virtual void Awake()
+    {
+        if (Application.isPlaying)
+        {
+            if (_instance != null)
+            {
+                Destroy(gameObject);
+            }
+
+            _instance = this as T;
+        }
+        else
+        {
+            _editorInstance = this as T;
+        }
+    }
+
 }
 
 /// <summary>
