@@ -49,9 +49,11 @@ The attack editor allows you to add various attacks to a given state - and vario
 
 ## State Machine Editor
 
+A state machine, once created, has a few options that can be specified. Firstly its' name which doesn't affect much. Then, for player character data, an Input Data object to associate the state machine with (for example, Dialogue state machine might have different inputs for its states) - without this set you cannot set the inputs associated with a state as it reads through the input data object to give the input options. Next is the condition field, which specifies what condition must be satisifed to automatically transition to this state machine. If this is not set, then transitions in & out of this state machine must be manually set. Finally there's a priority option, which is primarily there for state machines which may have overlapping conditions.
+
 ![Alt text](Screenshots/MoveListEditor.png?raw=true "State Machine Editor Example")
 
-Once you've set up your states, events, and attacks - you can now link them in and specify their transition conditions in the State Machine Editor. You may also specify different State machines to be used - therefore acting like a Hierarchal FSM. There are a few different values to edit within a given state in this editor:
+Once you've set up your states, events, and attacks - you can now link them in and specify their transition conditions in the State Machine Editor. Two types of state nodes can be created, a normal State Node (which has inputs, output transitions, interrupts) and a state machine transition node which only has an input and priority associated with it, but two selection nodes. One to select which state machine to transition to, and another to select which of its states to transition to. The modifiable parameters for each state (State Node & State Machine Transition Node) are:
 
 - Directional Input: Seen in the Air Launch state, specifies specific directional input that must be satisfied to enter the state
 - Button Input: Top right, specifies the button input associated with the state
