@@ -5,38 +5,45 @@ using UnityEngine;
 public static class Integration
 {
     #region Vector3
-    public static Vector3 Euler(Vector3 vel, Func<Vector3, Vector3> EoM, float dT)
+    public static Vector3 Euler(Vector3 vel, Vector3 pos, Func<Vector3, Vector3, Vector3> EoM, float dT)
     {
-        return vel + EoM(vel) * dT;
+        return vel + EoM(pos, vel) * dT;
     }
 
-    public static Vector3 RK4(Vector3 vel, Func<Vector3, Vector3> EoM, float dT)
+    /// <summary>
+    /// Assumption for 2nd order Diff Eqs is that when decomposed, the EoM for position is just
+    /// x_{i+1} = x_i + v_{i} dt
+    /// Also assuming none of the EoM have any explicit time-dependence, but this should be easy to add
+    /// to the parameter of EoM and just evolving it according to RK4 (pass in t + dT/2 for example)
+    /// Time dependent forces could be useful in the case of oscillating potentials or something/wind zones
+    /// idk
+    /// </summary>
+    /// <param name="vel"></param>
+    /// <param name="pos"></param>
+    /// <param name="EoM"></param>
+    /// <param name="dT"></param>
+    /// <returns></returns>
+    public static Vector3 RK4(StateManager stateManager, Vector3 vel, Vector3 pos, Func<StateManager, Vector3, Vector3, Vector3> EoM, float dT)
     {
+        Vector3 k1x, k2x, k3x, k4x;
+        Vector3 k1v, k2v, k3v, k4v;
+        Vector3 dTvec = Vector3.one * dT;
 
-        return Vector3.zero;
-    }
+        k1v = EoM(stateManager, pos, vel);
+        k1x = vel;
 
-    public static Vector3 Verlet(Vector3 vel, Vector3 pos, Func<Vector3, Vector3> EoM, float dT)
-    {
-        vel += 0.5f * EoM(vel) * dT;
-        pos += vel * dT;
+        k2v = EoM(stateManager, pos + dT * k1x / 2, vel + dT * k1v / 2);
+        k2x = vel + dT * k1v / 2;
 
-        return Vector3.zero;
+        k3v = EoM(stateManager, pos + dT * k2x / 2, vel + dT * k2v / 2);
+        k3x = vel + dT * k3v;
+
+        k4v = EoM(stateManager, pos + dT * k3x, vel + dT * k3v);
+        k4x = vel + dT * k3v;
+        
+        return vel + dT * (k1v + k2v + k3v + k4v) / 6;
     }
     
     #endregion
     
-}
-
-public class IntegrationTest
-{
-    public Vector3 BasicMovementEOM(Vector3 vel)
-    {
-        return Vector3.zero;
-    }
-
-    public void Test()
-    {
-        Integration.Euler(Vector3.forward, BasicMovementEOM, Time.deltaTime);
-    }
 }
