@@ -17,8 +17,8 @@ public class StateMachineNode : BaseStateNode
 
     public override void Initialize(StateMachineGraphView graphView_, Vector2 position)
     {
-        SetCharacterData();
         base.Initialize(graphView_, position);
+        SetCharacterData();
         stateData.toOtherCommandState = true;
         
     }
@@ -57,7 +57,6 @@ public class StateMachineNode : BaseStateNode
                 .command.state;
             
             stateSelectionField.choices = availableStates;
-            Debug.Log("Ignore");
 
             EditorUtility.SetDirty(_localCharData);
         });
@@ -86,6 +85,12 @@ public class StateMachineNode : BaseStateNode
         
         RefreshExpandedState();
         
+    }
+
+    public override void DrawExtension()
+    {
+        base.DrawExtension();
+        RefreshExpandedState();
     }
 
     public void UpdateAvailableStateChoices()

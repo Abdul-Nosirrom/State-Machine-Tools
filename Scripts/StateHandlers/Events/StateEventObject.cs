@@ -7,7 +7,16 @@ using UnityEngine;
 
 public class StateEventObject : ScriptableObject
 {
-    
+    protected StateManager _genericStateManager;
+
+    private void Awake()
+    {
+        // Reset Parameters
+        ResetEventParameters();
+    }
+
+    public virtual void ResetEventParameters() {}
+
     public void Invoke(StateManager _stateManager, List<object> parameters)
     {
         // Execute function has to be at the top of the file if any other functions are there
@@ -20,7 +29,6 @@ public class StateEventObject : ScriptableObject
     
     public List<(Type, string)> GetParameterTypes()
     {
-        // Im not sure if it always picks out the child one first, then the parent...
         MethodInfo eventFunction = GetType().GetMethod("Execute");
 
         object[] parameters = eventFunction.GetParameters();
@@ -30,7 +38,7 @@ public class StateEventObject : ScriptableObject
         
         foreach (ParameterInfo param in parameters)
         {
-            if (param.ParameterType != typeof(StateManager) && param.ParameterType != typeof(PlayerStateManager))
+            if (param.ParameterType != typeof(StateManager) && param.ParameterType != typeof(PlayerStateManager) && param.ParameterType != typeof(AIStateManager))
                 paramTypes.Add((param.ParameterType, param.Name));
         }
 

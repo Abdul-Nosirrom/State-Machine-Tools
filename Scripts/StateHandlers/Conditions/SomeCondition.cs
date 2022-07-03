@@ -2,7 +2,10 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
-[CreateAssetMenu(fileName = "Random", menuName = "State Manager/Conditions/Random", order = 2)]
+/// <summary>
+/// Example of how to link multiple conditions together
+/// </summary>
+[CreateAssetMenu(fileName = "Random", menuName = "State Manager/Shared/Conditions/Random", order = 2)]
 public class SomeCondition : Condition
 {
     public Condition pairCondition;

@@ -32,6 +32,8 @@ public class StateMachineGraphView : GraphView
     private StyleSheet activeNode, inActiveNode;
 
     private StyleSheet activeGroup, inActiveGroup;
+
+    public StyleSheet entryState;
     // General Info
 
     /* Stuff that the user of the editor will be able to do
@@ -119,6 +121,8 @@ public class StateMachineGraphView : GraphView
         inActiveNode = Resources.Load<StyleSheet>("InActiveNode");
         activeGroup = Resources.Load<StyleSheet>("ActiveGroup");
         inActiveGroup = Resources.Load<StyleSheet>("InActiveGroup");
+
+        entryState = Resources.Load<StyleSheet>("EntryState");
 
         
         if (characterData == null)
@@ -236,7 +240,7 @@ public class StateMachineGraphView : GraphView
         ContextualMenuManipulator contextualMenuManipulator = new ContextualMenuManipulator(
             menuEvent => menuEvent.menu.AppendAction(actionTitle, actionEvent =>
             {
-                AddElement(CreateNode(nodeType, actionEvent.eventInfo.localMousePosition));
+                AddElement(CreateNode(nodeType, actionEvent.eventInfo.mousePosition));
             })
             );
 
@@ -248,7 +252,7 @@ public class StateMachineGraphView : GraphView
         ContextualMenuManipulator contextualMenuManipulator = new ContextualMenuManipulator(
             menuEvent => menuEvent.menu.AppendAction("Create State Machine", actionEvent =>
             {
-                AddElement(CreateStateMachine(actionEvent.eventInfo.localMousePosition));
+                AddElement(CreateStateMachine(actionEvent.eventInfo.mousePosition));
             })
         ); 
         
@@ -289,7 +293,7 @@ public class StateMachineGraphView : GraphView
     {
         StateMachine newFSM = new StateMachine();
         character.stateMachines.Add(newFSM);
-        FSMGroup group = new FSMGroup(newFSM, localMousePos);
+        FSMGroup group = new FSMGroup(newFSM, localMousePos, this);
         newFSM.UpdateGraphPosition(localMousePos);
         
         List<GraphElement> elementsToAdd = new List<GraphElement>();
@@ -369,7 +373,6 @@ public class StateMachineGraphView : GraphView
         
         // Clean Up State Data, remove followup
         fromNode.stateData.RemoveFollowUp(toNode.nodeID);
-        groupedNodes[fromNode].stateMachineData.CleanUpBaseState();
         
         //groupedNodes[fromNode]?.stateMachineData.CleanUpBaseState();
         toNode.fromConditionNodes.Remove(condiNode);
@@ -381,19 +384,19 @@ public class StateMachineGraphView : GraphView
     public void DeleteConnection(Edge interruptEdge)
     {
         // Collect relevant data
-        BaseStateNode fromNode = (BaseStateNode) interruptEdge.output.node;
-        BaseStateNode toNode = (BaseStateNode) interruptEdge.input.node;
+        //BaseStateNode fromNode = (BaseStateNode) interruptEdge.output.node;
+        //BaseStateNode toNode = (BaseStateNode) interruptEdge.input.node;
         
         interruptEdge.output.Disconnect(interruptEdge);
         return;
         // Remove FollowUp ID
-        foreach (Interrupts interrupt in fromNode.stateData.interrupts)
-        {
-            if (interrupt.followUpState == toNode.nodeID)
-            {
-                interrupt.SetFollowUp(null);
-            }
-        }
+        //foreach (Interrupts interrupt in fromNode.stateData.interrupts)
+        //{
+        //    if (interrupt.followUpState == toNode.nodeID)
+        //    {
+        //        interrupt.SetFollowUp(null);
+        //    }
+        //}
 
     }
     
@@ -489,9 +492,16 @@ public class StateMachineGraphView : GraphView
                         {
                             for (int j = node.fromInterruptPorts.Count - 1; j >= 0; j--)
                             {
-                                Debug.Log("Connected Interupt Deleted");
-                                Debug.Log("Interrupt Counts: " + node.fromInterruptPorts.Count);
-                                DeleteConnection(node.fromInterruptPorts[j]);
+                                // Catch null reference exception if interrupt was already deleted itself
+                                try
+                                {
+                                    DeleteConnection(node.fromInterruptPorts[j]);
+                                }
+                                catch (NullReferenceException e)
+                                {
+                                    Debug.Log("Interrupt Already Deleted");
+                                    node.fromInterruptPorts.RemoveAt(j);
+                                }
                             }                            
                         }
 
@@ -507,7 +517,6 @@ public class StateMachineGraphView : GraphView
                         }
 
                         groupedNodes[node]?.stateMachineData.RemoveState(node.stateData);
-                        groupedNodes[node]?.stateMachineData.CleanUpBaseState();
                         groupedNodes.Remove(node);
                     }
                     RemoveElement(node);
@@ -566,6 +575,7 @@ public class StateMachineGraphView : GraphView
                 if (element is BaseStateNode stateNode)
                 {
                     stateNode.group = (FSMGroup) group;
+                    stateNode.DrawExtension();
                     groupedNodes[stateNode] = (FSMGroup) group;
                     groupedNodes[stateNode].AddStateToGroup(stateNode);
                     ungroupedNodes.Remove(stateNode);
@@ -575,6 +585,9 @@ public class StateMachineGraphView : GraphView
     }
 
 
+    /// <summary>
+    /// DONT FORGET TO HANDLE INTERRUPTS HERE, DATA ALREADY EXISTS SO JUST CALL ON DISCONNECT
+    /// </summary>
     private void OnGroupElementsRemoved()
     {
         List<ConditionNode> stuffToDelete = new List<ConditionNode>();
@@ -617,7 +630,7 @@ public class StateMachineGraphView : GraphView
                     groupedNodes[stateNode].RemoveStateFromGroup(stateNode);
                     groupedNodes.Remove(stateNode);
                     stateNode.group = null;
-                    
+                    stateNode.UnDraw();
 
                     ungroupedNodes.Add(stateNode);
                 }
@@ -633,7 +646,7 @@ public class StateMachineGraphView : GraphView
 
     private void AddExistingStateMachine(StateMachine stateMachine)
     {
-        FSMGroup group = new FSMGroup(stateMachine, stateMachine.graphPosition);
+        FSMGroup group = new FSMGroup(stateMachine, stateMachine.graphPosition, this);
         List<BaseStateNode> nodesInThisGroup = new List<BaseStateNode>();
         groupTitleChanged.Invoke(group, stateMachine.stateName);
 
@@ -651,6 +664,8 @@ public class StateMachineGraphView : GraphView
             if (ungroupedNodes.Contains(stateNode)) ungroupedNodes.Remove(stateNode);
             stateNodeLookUp[state.ID] = stateNode;
             stateNode.group = group;
+            stateNode.DrawExtension();
+            
 
             nodesInThisGroup.Add(stateNode);
         }

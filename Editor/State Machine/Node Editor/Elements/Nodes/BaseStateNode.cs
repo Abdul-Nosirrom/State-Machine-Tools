@@ -17,6 +17,7 @@ public class BaseStateNode : Node
     public StateInstance stateData;
 
     public FSMGroup group;
+    public StyleSheet extensionStyle;
 
     protected CharacterData _localCharData;
     
@@ -29,16 +30,16 @@ public class BaseStateNode : Node
     // This is temporary since im getting issues with some references
     public void SetCharacterData()
     {
-        _localCharData = DataManager.Instance.characterData[DataManager.Instance.currentCharacterEditorIndex];
+        _localCharData = graphView.charData;
     }
 
     public virtual void Initialize(StateMachineGraphView graphView_, Vector2 position)
     {
-        SetCharacterData();
-        
         graphView = graphView_;
+        SetCharacterData();
+
         stateData = new StateInstance(new InstanceID());
-        group = null;
+        group = graphView_.groupedNodes.ContainsKey(this) ? graphView_.groupedNodes[this] : null;
         nodeID = stateData.ID;
 
         fromConditionNodes = new List<ConditionNode>();
@@ -52,6 +53,7 @@ public class BaseStateNode : Node
         graphView = graphView_;
         stateData = state;
         nodeID = stateData.ID;
+        group = graphView_.groupedNodes.ContainsKey(this) ? graphView_.groupedNodes[this] : null;
         fromConditionNodes = new List<ConditionNode>();
         fromInterruptPorts = new List<Edge>();
 
@@ -60,7 +62,8 @@ public class BaseStateNode : Node
     
     public virtual void Draw()
     {
-
+        extensionStyle = Resources.Load<StyleSheet>("ExtensionContainerColor");
+        if (!graphView.stateNodeLookUp.ContainsKey(nodeID)) graphView.stateNodeLookUp[nodeID] = this;
         /* Input Port Initialization, passes through an int of its previous (Might only be needed for output ports) */
 
         inputPort = ElementUtilities.CreateStatePort("",Port.Capacity.Multi, Direction.Input);
@@ -70,25 +73,38 @@ public class BaseStateNode : Node
         
         inputContainer.Add(inputPort);
         
+    }
+
+    public virtual void DrawExtension()
+    {
+        styleSheets.Add(extensionStyle);
         /* Extensions Container - For the Base Node it's the Button/Direction Input & State */
 
         VisualElement customInputContainer = new VisualElement();
 
         Foldout inputFoldout = ElementUtilities.CreateFoldout("Input");
 
+        // Don't draw inputs since we're currently not associated with a group
+        if (@group == null) return;
+
+        if (@group.stateMachineData.inputData == null)
+        {
+            @group.stateMachineData.inputData = Helpers.GetInputData();
+        }
+        
         if (graphView.charData is PlayableCharacterData)
         {
             DropdownField buttonField = new DropdownField()
             {
                 label = "Button",
-                choices = InputManager.Instance.inputData.GetRawInputNames().ToList(),
+                choices = @group.stateMachineData.inputData.GetRawInputNames().ToList(),
                 index = stateData.command.input
             };
 
             DropdownField directionField = new DropdownField()
             {
                 label = "Direction",
-                choices = InputManager.Instance.inputData.GetMotionCommandNames().ToList(),
+                choices = @group.stateMachineData.inputData.GetMotionCommandNames().ToList(),
                 index = stateData.command.motionCommand
             };
 
@@ -111,7 +127,8 @@ public class BaseStateNode : Node
             //buttonField.Bind((SerializedObject) stateData.command.input);
 
             inputFoldout.Add(buttonField);
-            inputFoldout.Add(directionField);
+            if (@group.stateMachineData.inputData.GetMotionCommandNames().Length != 0)
+                inputFoldout.Add(directionField);
 
             customInputContainer.Add(inputFoldout);
         }
@@ -135,7 +152,12 @@ public class BaseStateNode : Node
         }
 
         extensionContainer.Add(customInputContainer);
-        
+    }
+
+    public virtual void UnDraw()
+    {
+        extensionContainer.Clear();
+        styleSheets.Remove(extensionStyle);
     }
 
 }

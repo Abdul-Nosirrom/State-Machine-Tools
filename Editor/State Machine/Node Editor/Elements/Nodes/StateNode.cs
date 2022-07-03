@@ -18,6 +18,9 @@ public class StateNode : BaseStateNode
     private Foldout interruptFoldout;
     private List<InterruptPort> interruptPorts;
 
+    // Wanna make this public so if its changed in one state we can access the others and change them
+    public Toggle entryStateToggle;
+
     public override void Draw()
     {
         interruptPorts = new List<InterruptPort>();
@@ -43,9 +46,54 @@ public class StateNode : BaseStateNode
 
 
         outputContainer.Add(outputPort);
+        
+        
+        base.Draw();
 
+    }
+
+    /// <summary>
+    /// This is only drawn when the state is added to a state machine, so you can safely assume group
+    /// is not null
+    /// </summary>
+    public override void DrawExtension()
+    {
+        if (stateData.isEntryStateInstance) styleSheets.Add(graphView.entryState);
+        
         // Only State Nodes should be limited
         /* Container Title Is State Name - Set Up by children*/
+        entryStateToggle = new Toggle()
+        {
+            label = "Is Entry State? ",
+            value = stateData.isEntryStateInstance
+        };
+
+        entryStateToggle.RegisterValueChangedCallback(evt =>
+        {
+            // Dont let you disable it, only way to disable is by checking a new one to always keep an entry state
+
+            stateData.isEntryStateInstance = evt.newValue;
+
+            @group.stateMachineData.UpdateEntryState(stateData);
+            
+            if (!styleSheets.Contains(graphView.entryState)) styleSheets.Add(graphView.entryState);
+            
+            foreach (var stateNode in @group.stateMachineData.stateInstances.Keys)
+            {
+                if (graphView.stateNodeLookUp[stateNode] is StateNode validStateNode)
+                {
+                    if (validStateNode.nodeID.Equals(nodeID)) continue;
+                    
+                    validStateNode.entryStateToggle.value = false;
+                    if (validStateNode.styleSheets.Contains(graphView.entryState))
+                        validStateNode.styleSheets.Remove(graphView.entryState);
+                }
+            }
+            
+            EditorUtility.SetDirty(graphView.charData);
+        });
+        
+        
         Toggle toggleLimitorField = new Toggle()
         {
             label = "Limit State Enter",
@@ -61,6 +109,7 @@ public class StateNode : BaseStateNode
         numTimesEnterField.RegisterValueChangedCallback(evt =>
         {
             stateData.numTimesToEnter = evt.newValue;
+            EditorUtility.SetDirty(graphView.charData);
         });
 
         toggleLimitorField.RegisterValueChangedCallback(evt =>
@@ -69,16 +118,17 @@ public class StateNode : BaseStateNode
             toggleLimitorField.Add(numTimesEnterField);
             if (evt.newValue) toggleLimitorField.Add(numTimesEnterField);
             else if (toggleLimitorField.Contains(numTimesEnterField)) toggleLimitorField.Remove(numTimesEnterField);
+            EditorUtility.SetDirty(graphView.charData);
         });
 
         //extensionContainer.style.flexDirection = FlexDirection.Row;
         if (toggleLimitorField.value) toggleLimitorField.Add(numTimesEnterField);
         extensionContainer.Insert(0, toggleLimitorField);
-        //extensionContainer.style.flexDirection = FlexDirection.Column;
+        extensionContainer.Insert(0, entryStateToggle);
+        //extensionContainer.style.flexDirection = FlexDirection.ColumnReverse;
         
-        base.Draw();
         
-        /* SKIP THIS FOR NOW WHILE SETTING UP INITIALIZATION */
+        base.DrawExtension();
         //  Set Up Interrupts Drop Down 
         interruptFoldout = ElementUtilities.CreateFoldout("Interrupts");
         
@@ -86,7 +136,7 @@ public class StateNode : BaseStateNode
         interruptFoldout.value = stateData.interrupts.Count > 0;
         
 
-            Button addInterruptButton = ElementUtilities.CreateButton("Add Interrupt", () =>
+        Button addInterruptButton = ElementUtilities.CreateButton("Add Interrupt", () =>
         {
             VisualElement interruptTo = CreateInterruptPort(new Interrupts());
             interruptFoldout.Add(interruptTo);
@@ -102,10 +152,13 @@ public class StateNode : BaseStateNode
             if (interruptContainer == null) continue;
             interruptFoldout.Add(interruptContainer);
         }
+
         
-        extensionContainer.Insert(2, interruptFoldout);
+        int index = 2;
+        if (@group != null) index = 3;
+        extensionContainer.Insert(index, interruptFoldout);
         
-            
+
         RefreshExpandedState();
     }
 
@@ -139,20 +192,23 @@ public class StateNode : BaseStateNode
         ObjectField interruptField = new ObjectField()
         {
             //name = interrupts.interrupt == null ? "Add Interrupt" : interrupts.interrupt.description,
-            objectType = typeof(Interrupt),
+            objectType = typeof(Condition),
             value = interrupts.interrupt
         };
 
+        interruptField.style.width = 175f;
+
         interruptField.RegisterValueChangedCallback(evt =>
         {
-            interruptPort.interrupt.interrupt = evt.newValue as Interrupt;
+            interruptPort.interrupt.interrupt = evt.newValue as Condition;
             EditorUtility.SetDirty(graphView.charData);
         });
+
         
         interruptContainer.Insert(0, deleteInterrupt);
         interruptContainer.Insert(1, interruptField);
         interruptContainer.Insert(2, interruptPort);
-
+        
         return interruptContainer;
     }
 
@@ -174,7 +230,6 @@ public class StateNode : BaseStateNode
         graphView.AddElement(newEdge2);
         
         // Clean Up Entry List - Under the assumption that connections can only be made between states apart of the same group
-        graphView.groupedNodes[this].stateMachineData.CleanUpBaseState();
         if (!graphView.groupedNodes.ContainsKey(this)) graphView.groupedNodes[this].AddElement(condiNode);
         
         

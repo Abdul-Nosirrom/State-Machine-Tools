@@ -16,19 +16,7 @@ public class CharacterData : ScriptableObject
     {
         return character.name;
     }
-
-    public string[] GetScriptNames()
-    {
-        List<EventScript> eventScripts = character.eventScripts;
-        string[] _names = new string[eventScripts.Count];
-        for (int i = 0; i < _names.Length; i++)
-        {
-            _names[i] = eventScripts[i].eventName;
-        }
-
-        return _names;
-    }
-        
+    
     public string[] GetStateNames()
     {
         List<CharacterState> characterStates = character.characterStates;

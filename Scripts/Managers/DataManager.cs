@@ -12,34 +12,18 @@ using UnityEngine.UI;
 // Adding execute always attribute such that the inspector can get its data from here always
 
 [ExecuteInEditMode]
-public class DataManager : EditorSingleton<DataManager>
+public class DataManager : Singleton<DataManager>
 {
     public List<CharacterData> characterData;
     
-    public float deadZone = 0.2f;
-
     public static float hitStop;
     
     public PlayerStateManager mainCharacter;
     
-    // FOR EDITOR USE
-    public int currentCharacterEditorIndex;
 
     void Update()
     {
         hitStop = hitStop > 0 ? hitStop--: hitStop;
-    }
-
-    private void OnEnable()
-    {
-        //AssemblyReloadEvents.afterAssemblyReload += ReloadFields;
-        //AssemblyReloadEvents.afterAssemblyReload += Awake;
-    }
-
-    private void OnDisable()
-    {
-        //AssemblyReloadEvents.afterAssemblyReload -= ReloadFields;
-        //AssemblyReloadEvents.afterAssemblyReload -= Awake;
     }
 
     public static void SetHitStop(float _pow)
@@ -50,7 +34,6 @@ public class DataManager : EditorSingleton<DataManager>
     public void ReloadFields()
     {
 #if UNITY_EDITOR
-        currentCharacterEditorIndex = 0;
         
         string[] guids = AssetDatabase.FindAssets("t:"+ typeof(CharacterData).Name);  //FindAssets uses tags check documentation for more info
         characterData = new List<CharacterData>(guids.Length);
@@ -60,34 +43,17 @@ public class DataManager : EditorSingleton<DataManager>
             characterData.Add(AssetDatabase.LoadAssetAtPath<CharacterData>(path));
         }
 
-        GetCharacterNames();
 #endif
     }
 
-    // Setup Action Data
-    private void Start()
+    public void ResetStateMachineInputData()
     {
-        
-        ReloadFields();
-        // Load UI and Manager Scenes
-        if (Application.isPlaying)
+        foreach (var character in characterData)
         {
-            //SceneManager.LoadScene("Debug UI", LoadSceneMode.Additive);
-            //SceneManager.LoadScene("Base Test", LoadSceneMode.Additive);
+            foreach (var FSM in character.character.stateMachines) FSM.ResetInputData();
         }
     }
 
-    public List<string> GetCharacterNames()
-    {
-        List<string> characterNames = new List<string>();
-        foreach (CharacterData charData in characterData)
-        {
-            if (charData != null)
-                characterNames.Add(charData.character.name);
-        }
-
-        return characterNames;
-    }
 
 
 /*    
@@ -119,3 +85,4 @@ public class DataManager : EditorSingleton<DataManager>
 */
 
 }
+

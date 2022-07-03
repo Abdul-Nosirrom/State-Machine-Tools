@@ -1,0 +1,9 @@
+StateNode #extension
+{
+    background-color : rgba(33,33,33,0.74)
+}
+
+StateMachineNode #extension
+{
+    color : rgba(33,33,33,0.74)
+}

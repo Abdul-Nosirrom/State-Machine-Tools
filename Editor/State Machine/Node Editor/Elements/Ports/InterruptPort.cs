@@ -77,6 +77,8 @@ public class InterruptEdgeConnectorListener : IEdgeConnectorListener
             else
             {
                 Debug.Log("Interrupt Connection Being Made!");
+                // Clean Up Base State
+                
                 graphView.AddElement(edge);
                 edge.output.Connect(edge);
                 edge.input.Connect(edge);

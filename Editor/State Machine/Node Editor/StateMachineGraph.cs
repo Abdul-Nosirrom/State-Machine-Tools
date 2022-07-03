@@ -15,6 +15,8 @@ public class StateMachineGraph : EditorWindow
     
     public static CharacterData charData;
     public static Character character;
+
+    public static int characterIndex;
     //private StateMachine _currentStateMachineMachine;
     
     // Callback to open editor when asset is double clicked
@@ -24,10 +26,11 @@ public class StateMachineGraph : EditorWindow
         if (Selection.activeObject is CharacterData characterSelected)
         {
             OpenStateMachineWindow();
+            FSMDataUtilities.CollectCharacterData();
             charData = characterSelected;
             character = charData.character;
-            DataManager.Instance.currentCharacterEditorIndex =
-                DataManager.Instance.GetCharacterNames().FindIndex(pred => pred.Contains(character.name));
+            characterIndex =
+                FSMDataUtilities.GetCharacterNames().FindIndex(pred => pred.Contains(character.name));
             return true;
         }
 
@@ -66,8 +69,8 @@ public class StateMachineGraph : EditorWindow
         // Set open state machine to the selected character
         charData = stateManager.characterData;
         character = charData.character;
-        DataManager.Instance.currentCharacterEditorIndex =
-            DataManager.Instance.GetCharacterNames().FindIndex(pred => pred.Contains(character.name));
+        characterIndex =
+            FSMDataUtilities.GetCharacterNames().FindIndex(pred => pred.Contains(character.name));
 
     }
 
@@ -78,7 +81,7 @@ public class StateMachineGraph : EditorWindow
         labelStyle.fontSize = 18;
 
         // No Character Guard
-        if (DataManager.Instance.characterData.Count == 0)
+        if (!FSMDataUtilities.CollectCharacterData())
         {
             using (new GUILayout.HorizontalScope(EditorStyles.helpBox))
             {
@@ -97,6 +100,7 @@ public class StateMachineGraph : EditorWindow
         };
         
         _graphView.StretchToParentSize();
+        _graphView.charData = charData;
         _graphView.InitializeGraph(charData);
         
         rootVisualElement.Add(_graphView);
@@ -109,18 +113,31 @@ public class StateMachineGraph : EditorWindow
         var toolbarMid = new Toolbar();
         var toolbarBot = new Toolbar();
 
-        if (DataManager.Instance.currentCharacterEditorIndex > DataManager.Instance.characterData.Count)
-            DataManager.Instance.currentCharacterEditorIndex = 0;
+        if (FSMDataUtilities.GetCharacterData(characterIndex) == null)
+            characterIndex = 0;
         
-        var characterSelect = new DropdownField("Character: ", DataManager.Instance.GetCharacterNames(), DataManager.Instance.currentCharacterEditorIndex);
+        var characterSelect = new DropdownField("Character: ", FSMDataUtilities.GetCharacterNames(), characterIndex);
 
         characterSelect.RegisterValueChangedCallback((evt) =>
         {
-            DataManager.Instance.currentCharacterEditorIndex =
-                characterSelect.choices.FindIndex(pred => pred.Contains(evt.newValue));
-            charData = DataManager.Instance.characterData[DataManager.Instance.currentCharacterEditorIndex];
+
+            int i = 0;
+            characterIndex = 0;
+            foreach (var name in FSMDataUtilities.GetCharacterNames())
+            {
+                if (name.Equals(evt.newValue))
+                {
+                    characterIndex = i;
+                    break;
+                }
+
+                i++;
+            }
+            charData = FSMDataUtilities.GetCharacterData(characterIndex);
             character = charData.character;
+            _graphView.ClearGraph();
             _graphView.InitializeGraph(charData);
+
         });
         
 
@@ -141,14 +158,14 @@ public class StateMachineGraph : EditorWindow
 
     private void OnEnable()
     {
-        if (DataManager.Instance.characterData == null) DataManager.Instance.ReloadFields();
-        if (DataManager.Instance.characterData.Count == 0) return;
+        if (!FSMDataUtilities.isDataCollected) FSMDataUtilities.CollectCharacterData();
+        if (!FSMDataUtilities.AreThereCharacters()) return;
 
         // Initialize character first
-        if (DataManager.Instance.currentCharacterEditorIndex > DataManager.Instance.characterData.Count)
-            DataManager.Instance.currentCharacterEditorIndex = 0;
+        if (FSMDataUtilities.GetCharacterData(characterIndex) == null)
+            characterIndex = 0;
         
-        charData = DataManager.Instance.characterData[DataManager.Instance.currentCharacterEditorIndex];
+        charData = FSMDataUtilities.GetCharacterData(characterIndex);
         character = charData.character;
         
         ConstructGraphView();

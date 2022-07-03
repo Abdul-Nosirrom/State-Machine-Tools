@@ -17,7 +17,7 @@ public class CharacterManagerEditor : EditorWindow
     public CharacterData dataAsset;
     string characterName = "Enter Character Name Here";
     public Texture2D border;
-
+    public int characterIndex;
 
     private void OnGUI()
     {
@@ -38,8 +38,7 @@ public class CharacterManagerEditor : EditorWindow
                 AssetDatabase.CreateAsset(newChar, $"Assets/Data/Characters/Playable/{characterName}.asset");
                 dataAsset = newChar;
                 dataAsset.character.name = characterName;
-                DataManager.Instance.characterData.Add(dataAsset);
-                DataManager.Instance.ReloadFields();
+                FSMDataUtilities.CollectCharacterData();
 
                 AssetDatabase.SaveAssets();
             }
@@ -50,15 +49,14 @@ public class CharacterManagerEditor : EditorWindow
                 AssetDatabase.CreateAsset(newChar, $"Assets/Data/Characters/AI/{characterName}.asset"); 
                 dataAsset = newChar; 
                 dataAsset.character.name = characterName; 
-                DataManager.Instance.characterData.Add(dataAsset);
-                DataManager.Instance.ReloadFields();
+                FSMDataUtilities.CollectCharacterData();
 
                 AssetDatabase.SaveAssets();
             } 
             GUILayout.EndHorizontal(); 
         }
         
-        if (DataManager.Instance.characterData.Count == 0) return;
+        if (!FSMDataUtilities.CollectCharacterData()) return;
         
         using (new GUILayout.HorizontalScope(EditorStyles.helpBox))
         {
@@ -66,9 +64,9 @@ public class CharacterManagerEditor : EditorWindow
             GUILayout.BeginHorizontal();
             
             GUILayout.BeginHorizontal(labelStyle);
-            DataManager.Instance.currentCharacterEditorIndex =
-                EditorGUILayout.Popup(DataManager.Instance.currentCharacterEditorIndex, DataManager.Instance.GetCharacterNames().ToArray());
-            dataAsset = DataManager.Instance.characterData[DataManager.Instance.currentCharacterEditorIndex];
+            characterIndex =
+                EditorGUILayout.Popup(characterIndex, FSMDataUtilities.GetCharacterNames().ToArray());
+            dataAsset = FSMDataUtilities.GetCharacterData(characterIndex);
             GUILayout.EndHorizontal();
             
             if (GUILayout.Button("Delete Character"))
@@ -95,8 +93,9 @@ public class CharacterManagerEditor : EditorWindow
                 {
                     Debug.LogError( string.Format("Can not deleted '{0}'. File does not exist.", path) );
                 }
-                DataManager.Instance.currentCharacterEditorIndex = 0;
-                DataManager.Instance.ReloadFields();
+
+                characterIndex = 0;
+                FSMDataUtilities.CollectCharacterData();
                 AssetDatabase.Refresh();
             }
 

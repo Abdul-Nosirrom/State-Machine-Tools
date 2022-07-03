@@ -5,10 +5,6 @@ public class HitBox : MonoBehaviour
 {
     private StateManager character;
 
-    [IndexedItem(IndexedItemAttribute.IndexedItemType.STATES)]
-    public int stateIndex;
-    
-    
     // Use this for initialization
     void Start ()
     {
@@ -17,8 +13,11 @@ public class HitBox : MonoBehaviour
 
     void OnTriggerStay(Collider other)
     {
+        return;
+        Debug.Log("Trigger Found");
         if (other.gameObject != transform.root.gameObject)
         {
+            Debug.Log("Trigger Start");
             if (character.hitActive > 0)
             {
                 HitReactor victim = other.transform.root.GetComponent<HitReactor>();

@@ -3,9 +3,11 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using System.ComponentModel;
+using System.Linq;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.Events;
+using UnityEngine.InputSystem;
 using Random = System.Random;
 
 #region Character Classes
@@ -23,9 +25,7 @@ public class Character
     [HideInInspector] public Texture2D characterThumbnail;
     
     public List<CharacterState> characterStates;
-    public List<EventScript> eventScripts;
 
-    
     public List<StateMachine> stateMachines;
     
     // SFX and VFX associations
@@ -39,13 +39,11 @@ public class Character
     public Character()
     {
         characterStates = new List<CharacterState>();
-        eventScripts = new List<EventScript>();
         stateMachines = new List<StateMachine>();
         globalPrefabs = new List<GameObject>();
         
         // Initialize Data
         characterStates.Add(new CharacterState());
-        eventScripts.Add(new EventScript());
         //stateMachines.Add(new StateMachine());
 
     }
@@ -106,7 +104,17 @@ public class CharacterState
 
     [HideInInspector] 
     public int stateIndex;
+    
+    // Cooldown parameters
+    public bool hasCoolDown = false;
+    public float coolDown = 0f;
+    
+    // Unlockable parameters
+    public bool isUnlockable = false;
+    public bool stateUnlocked = false;  // Its fine to keep this here as no one uses it but the player (or maybe bosses)
 
+    public bool strict; // Meaning that it wont transition automatically to states with NONE inputs
+    
     public float length;
     
     // Loop for shit like locomotion where it can be interrupted but otherwise remains as is
@@ -118,6 +126,8 @@ public class CharacterState
     public List<StateEvent> events;
     public List<Attack> attacks;
 
+    public List<AnimationConditionOverrides> animationOverrides;
+
     public CharacterState()
     {
         stateName = "<NEW STATE>";
@@ -125,13 +135,26 @@ public class CharacterState
         onStateEnterEvents = new List<StateEvent>();
         onStateExitEvents = new List<StateEvent>();
         attacks = new List<Attack>();
-        attacks.Add(new Attack());
-        
+        animationOverrides = new List<AnimationConditionOverrides>();
+
         // Set default animation curve to constant
         // The timing here is normalized/ in units of 1 "state length"
         animCurve = AnimationCurve.Constant(0, 1, 1);
     }
     
+}
+
+[System.Serializable]
+public class AnimationConditionOverrides
+{
+    public string animName;
+    public Condition condition;
+
+    public AnimationConditionOverrides()
+    {
+        animName = "";
+        condition = null;
+    }
 }
 
 #region State Events
@@ -145,8 +168,7 @@ public class StateEvent
 
     public bool active = true;
     
-    [IndexedItem(IndexedItemAttribute.IndexedItemType.SCRIPTS)]
-    public int script;
+    public StateEventObject eventObject;
 
     public List<GenericValueWrapper> parameters;
 
@@ -176,20 +198,6 @@ public class StateEvent
 }
 
 
-[System.Serializable]
-public class EventScript
-{
-    [HideInInspector] 
-    public int eventIndex;
-
-    public string eventName = "< NEW EVENT SCRIPT >";
-    
-    public StateEventObject eventScript;
-    
-    //[HideInInspector, SerializeReference] public List<object> baseParamList;
-    [HideInInspector] public List<GenericValueWrapper> baseParamList;
-}
-
 #endregion
 
 /// <summary>
@@ -211,7 +219,6 @@ public class InputCommand
     
 }
 
-
 /// <summary>
 /// Defines the states a command will be accepted and conditions
 /// Example - a set of command states that will be accepted when grounded, when aerial, etc...
@@ -224,11 +231,20 @@ public class StateMachine
     public string stateName;
     public Vector2 graphPosition;
 
+    public List<StateEvent> onStateMachineEnterEvents;
+    public List<StateEvent> onStateMachineExistEvents;
+
     /// <summary>
     /// How to handle these is the tricky part. Should keep it to 1 condition per-FSM, but also they shouldn't
     /// overlap (e.g Grounded Vs Air obviously don't overlap)
     /// </summary>
     public Conditions FSMCondition;
+
+    /// <summary>
+    /// What input map (action map) should this state machine use? For example, PlayerControls for a gameplay FSM
+    /// and UI controls for a dialogue FSM - use inputData object not map to specify this (map is contained in here tho)
+    /// </summary>
+    [SerializeField] public InputData inputData;
 
     public int priority;    // Priority is set to ensure proper selection of FSM in case of overlapping conditions
 
@@ -242,7 +258,7 @@ public class StateMachine
 
     // Use this to avoid using the zero index of the above list as a dummy state
     // Put states that arent followups of other states here
-    public List<InstanceID> entryStateInstances;
+    public InstanceID entryState;
 
     // Could add a "From Any State" that always exists
 
@@ -252,12 +268,18 @@ public class StateMachine
     public StateMachine()
     {
         stateInstances = new GenericDictionary<InstanceID, StateInstance>();
-        entryStateInstances = new List<InstanceID>();
         stateName = "<NEW COMMAND STATE>";
         graphPosition = Vector2.zero;
         FSMCondition = new Conditions();
         priority = 0;
+
         isEntryState = false;
+    }
+    
+    public void ResetInputData()
+    {
+        inputData = InputManager.Instance.inputDataContainer.Values.ToArray()[0];
+        ResetStateInputs();
     }
 
     public StateInstance AddState()
@@ -271,8 +293,6 @@ public class StateMachine
     public void AddExistingState(StateInstance state)
     {
         stateInstances.Add(state.ID, state);
-        // New state presumably not connected to anything else at the instance it's added, so:
-        entryStateInstances.Add(state.ID);
 
         state.activated = true;
     }
@@ -284,9 +304,13 @@ public class StateMachine
             stateInstances.Remove(state.ID);
         }
 
-        if (entryStateInstances.Contains(state.ID))
+        // Check if we're removing the entry state
+        if (state.ID.Equals(entryState))
         {
-            entryStateInstances.Remove(state.ID);
+            // Set to "null"
+            entryState.ID = "";
+            // Set it to a random one
+            if (stateInstances.Count > 0) UpdateEntryState(stateInstances.Values.ToArray()[0]);
         }
 
         foreach (StateInstance states in stateInstances.Values)
@@ -299,45 +323,29 @@ public class StateMachine
 
         state.activated = false;
     }
-
-    public void ResetStateInstanceCounters()
-    {
-        foreach (var state in stateInstances.Values) state.numTimesEntered = 0;
-    }
     
+
+    public void ResetStateInputs()
+    {
+        foreach (var state in stateInstances.Values)
+        {
+            state.command.input = 0;
+            state.command.motionCommand = 0;
+        }
+    }
+
     /// <summary>
     /// Clean up and verify entry state instances
     /// </summary>
-    public void CleanUpBaseState()
+    public void UpdateEntryState(StateInstance newEntryState)
     {
-        // Check for which states are independent (e.g no state has it as a followup) - add those to the entry list
-        statesFollowedUp = new GenericDictionary<InstanceID, StateInstance>();
-
-        if (stateInstances.Count == 0)
+        foreach (var states in stateInstances.Values)
         {
-            if (entryStateInstances.Count != 0) entryStateInstances.Clear();
-            return;
-        }
-        foreach (StateInstance state in stateInstances.Values)
-        {
-            foreach (InstanceID transition in state.followUps.Keys)
-            {
-                if (!stateInstances.ContainsKey(transition))
-                {
-                    Debug.Log("ID Not Found in: " + stateName);
-                    Debug.Log("State ID: " + transition.ID);
-                }
-                if (statesFollowedUp.ContainsKey(stateInstances[transition].ID)) continue;
-                
-                statesFollowedUp.Add(stateInstances[transition].ID, stateInstances[transition]);
-            }
+            states.isEntryStateInstance = false;
         }
 
-        foreach (StateInstance entryState in stateInstances.Values)
-        {
-            if (statesFollowedUp.ContainsKey(entryState.ID)) entryStateInstances.Remove(entryState.ID);
-            else if (!entryStateInstances.Contains(entryState.ID)) entryStateInstances.Add(entryState.ID);
-        }
+        newEntryState.isEntryStateInstance = true;
+        entryState = newEntryState.ID;
     }
     
     public void UpdateGraphPosition(Vector2 pos)
@@ -356,6 +364,8 @@ public class StateInstance
     [HideInInspector] public InstanceID ID;
     public Vector2 graphPosition;
 
+    public bool isEntryStateInstance;
+    
     public bool toOtherCommandState;
     public int stateMachineTransition;
     public InstanceID otherStateMachineInstanceID;
@@ -370,7 +380,7 @@ public class StateInstance
     // Sort of a transient condition
     public bool limitTimesToEnter = false;
     public int numTimesToEnter = 1;
-    [HideInInspector] public int numTimesEntered = 0;
+    
     
     // AI Specific parameter
     [Range(0,1)]
@@ -412,7 +422,8 @@ public class StateInstance
         command = new InputCommand();
         probability = 1;
         interrupts = new List<Interrupts>();
-        
+
+        isEntryStateInstance = false;
         toOtherCommandState = false;
     }
 
@@ -428,6 +439,7 @@ public class StateInstance
 public abstract class Condition : ScriptableObject
 {
     public string description;
+
     public abstract bool CheckCondition(StateManager state);
 }
 
@@ -462,12 +474,6 @@ public class Conditions
 
 #region State Interrupt Classes
 
-public abstract class Interrupt : ScriptableObject
-{
-    public string description;
-    public abstract bool CheckInterrupt(StateManager stateManager);
-}
-
 /// <summary>
 /// Interrupts are ABSOLUTE, meaning they supersede everything, if interrupts are satisfied, will transition to its
 /// followup state regardless. This should suffice, and hopefully no issues arise due to this
@@ -475,7 +481,7 @@ public abstract class Interrupt : ScriptableObject
 [System.Serializable] //SERIALIZATION ISSUE FIX PLEASE
 public class Interrupts
 {
-    public Interrupt interrupt;
+    public Condition interrupt;
     public InstanceID followUpState;
 
     public Interrupts()
@@ -491,7 +497,7 @@ public class Interrupts
 
     public bool CheckInterrupts(StateManager stateManager)
     {
-        return interrupt.CheckInterrupt(stateManager) || interrupt == null;
+        return interrupt.CheckCondition(stateManager) || interrupt == null;
     }
 }
 

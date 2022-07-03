@@ -1,4 +1,5 @@
-﻿using System.Web.UI.WebControls;
+﻿using System.Collections.Generic;
+using System.Web.UI.WebControls;
 using UnityEditor;
 using UnityEditor.Experimental.GraphView;
 using UnityEditor.UIElements;
@@ -10,12 +11,14 @@ public class FSMGroup : Group
     public StateMachine stateMachineData;
     public CharacterData _localCharData;
     private Foldout conditionFoldout;
-    private float defaultBorderWidth;
+    private StateMachineGraphView _graphView;
 
-    public FSMGroup(StateMachine stateMachine, Vector2 position)
+    public FSMGroup(StateMachine stateMachine, Vector2 position, StateMachineGraphView graphView)
     {
-        defaultBorderWidth = contentContainer.style.borderBottomWidth.value;
+
         stateMachineData = stateMachine;
+        _graphView = graphView;
+        
         SetPosition(new Rect(position, Vector2.zero));
 
         stateMachineData.graphPosition = position;
@@ -26,21 +29,42 @@ public class FSMGroup : Group
     
     public void SetCharacterData()
     {
-        _localCharData = DataManager.Instance.characterData[DataManager.Instance.currentCharacterEditorIndex];
+        _localCharData = _graphView.charData;
     }
 
-    public void UpdateStateMachine(bool isActive)
-    {
-        if (isActive) AddToClassList("running");
-        else AddToClassList("notrunning");
-    }
     
     public void Draw()
     {
         VisualElement ConditionContainer = new VisualElement();
+        
+
+        ObjectField inputMapField = new ObjectField()
+        {
+            label = "Input Map:",
+            objectType = typeof(InputData),
+            value = stateMachineData.inputData
+        };
+
+        inputMapField.RegisterValueChangedCallback(evt =>
+        {
+            // Assign our input map
+            if (stateMachineData.inputData == null || !evt.newValue.Equals(stateMachineData.inputData.inputActionMap))
+            {
+                stateMachineData.inputData = evt.newValue as InputData;
+                stateMachineData.ResetStateInputs();
+                foreach (var stateNodeID in stateMachineData.stateInstances.Keys)
+                {
+                    var stateNode = _graphView.stateNodeLookUp[stateNodeID];
+                    stateNode.UnDraw();
+                    stateNode.DrawExtension();
+                }
+            }
+            EditorUtility.SetDirty(_localCharData);
+        });
 
         ObjectField conditionsField = new ObjectField()
         {
+            label = "State Machine Condition:",
             objectType = typeof(Condition),
             value = stateMachineData.FSMCondition.condition
         };
@@ -53,7 +77,7 @@ public class FSMGroup : Group
 
         IntegerField priorityField = new IntegerField()
         {
-            label = "Priority",
+            label = "Priority:",
             value = stateMachineData.priority
         };
         
@@ -67,14 +91,19 @@ public class FSMGroup : Group
         {
             text = stateMachineData.isEntryState ? "Current Entry FSM" : "Set As Entry FSM"
         };
+        
+        if (stateMachineData.isEntryState) entryFSMButton.style.color = Color.red;
 
         entryFSMButton.clicked += () =>
         {
+            entryFSMButton.style.color = Color.red;
             _localCharData.character.SetAsEntryFSM(stateMachineData);
             EditorUtility.SetDirty(_localCharData);
             entryFSMButton.text = "Current Entry FSM";
         };
 
+        if (_localCharData is PlayableCharacterData)
+            ConditionContainer.Add(inputMapField);
         ConditionContainer.Add(conditionsField);
         ConditionContainer.Add(priorityField);
         ConditionContainer.Add(entryFSMButton);
@@ -88,7 +117,6 @@ public class FSMGroup : Group
         if (node is BaseStateNode stateNode)
         {
             stateMachineData.AddExistingState(stateNode.stateData);
-            stateMachineData.CleanUpBaseState();
         }
     }
 
@@ -97,7 +125,6 @@ public class FSMGroup : Group
         if (node is BaseStateNode stateNode)
         {
             stateMachineData.RemoveState(stateNode.stateData);
-            stateMachineData.CleanUpBaseState();
         }
     }
 

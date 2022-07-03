@@ -19,6 +19,5 @@ public class Attack
 
     public float cancelWindow;
     
-    // Store what's been hit in current attack
-    public GenericDictionary<string, bool> confirmedHits;
+    
 }

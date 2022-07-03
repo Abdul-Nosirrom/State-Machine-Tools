@@ -6,16 +6,22 @@ using UnityEngine;
 public class AttackEditorWindow : EditorWindow
 {
 
-    [MenuItem("Window/Attack Editor")]
-    static void Init()
+    [MenuItem("State Machine/Attack Editor")]
+    public static void Init()
     {
         EditorWindow.GetWindow(typeof(AttackEditorWindow),false, "Attack Editor");
     }
     
+    public static void SetCharacter(StateManager stateManager)
+    {
+        characterIndex =
+            FSMDataUtilities.GetCharacterNames().FindIndex(pred => pred.Contains(stateManager._character.name));
+    }
 
     CharacterData dataAsset;
     private Character character;
     private int characterStateIndex;
+    public static int characterIndex;
     private CharacterState currentState;
     private Attack currentAttack;
     private HitBox hitBox;
@@ -47,7 +53,7 @@ public class AttackEditorWindow : EditorWindow
         hitBoxes = FindObjectsOfType<HitBox>();
 
         // No Character Guard
-        if (DataManager.Instance.characterData.Count == 0)
+        if (!FSMDataUtilities.AreThereCharacters())
         {
             using (new GUILayout.HorizontalScope(EditorStyles.helpBox))
             {
@@ -56,14 +62,15 @@ public class AttackEditorWindow : EditorWindow
 
             return;
         }
+
         
         using (new GUILayout.HorizontalScope(EditorStyles.helpBox))
         {
 
             GUILayout.BeginHorizontal();
-            DataManager.Instance.currentCharacterEditorIndex =
-                EditorGUILayout.Popup(DataManager.Instance.currentCharacterEditorIndex, DataManager.Instance.GetCharacterNames().ToArray());
-            dataAsset = DataManager.Instance.characterData[DataManager.Instance.currentCharacterEditorIndex];
+            characterIndex =
+                EditorGUILayout.Popup(characterIndex, FSMDataUtilities.GetCharacterNames().ToArray());
+            dataAsset = FSMDataUtilities.GetCharacterData(characterIndex);
             character = dataAsset.character;
 
             // Make A specific editor to handle character creation & removal to ensure EngineData is properly clean
@@ -81,9 +88,9 @@ public class AttackEditorWindow : EditorWindow
             GUILayout.Label("Selected Character: ", labelStyle);
 
             GUILayout.BeginHorizontal();
-            DataManager.Instance.currentCharacterEditorIndex =
-                EditorGUILayout.Popup(DataManager.Instance.currentCharacterEditorIndex, DataManager.Instance.GetCharacterNames().ToArray());
-            dataAsset = DataManager.Instance.characterData[DataManager.Instance.currentCharacterEditorIndex];
+            characterIndex =
+                EditorGUILayout.Popup(characterIndex, FSMDataUtilities.GetCharacterNames().ToArray());
+            dataAsset = FSMDataUtilities.GetCharacterData(characterIndex);
             character = dataAsset.character;
 
 
@@ -168,6 +175,7 @@ public class AttackEditorWindow : EditorWindow
 
                     if (GUILayout.Button("Apply Hitbox", buttonStyle))
                     {
+                        currentAttack.start = 0f;
                         currentAttack.hitBoxPos = hitBox.transform.localPosition;
                         currentAttack.hitBoxScale = hitBox.transform.localScale;
                     }

@@ -29,12 +29,13 @@ public class ConditionNode : Node
     // This is temporary since im getting issues with some references
     public void SetCharacterData()
     {
-        _localCharData = DataManager.Instance.characterData[DataManager.Instance.currentCharacterEditorIndex];
+        _localCharData = graphView.charData;
     }
     
     public void Initialize(BaseStateNode from, BaseStateNode to, Vector2 position)
     {
-        SetCharacterData();
+        //SetCharacterData();
+        _localCharData = StateMachineGraph.charData;
         
         fromState = from;
         toState = to;
@@ -126,6 +127,8 @@ public class ConditionNode : Node
             objectType = typeof(Condition), 
             value = condition.condition
         };
+
+        conditionsField.style.width = 100f;
 
         conditionsField.RegisterValueChangedCallback((evt) =>
         {

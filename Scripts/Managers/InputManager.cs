@@ -7,18 +7,39 @@ using UnityEngine.InputSystem;
 #endif
 using UnityEditor;
 
-//[ExecuteAlways]
+[ExecuteAlways]
 public class InputManager : EditorSingleton<InputManager>
 {
+    #region Parameters
+
+    [Header("Input Parameters")] 
+    [Tooltip("Specify how many frames an input must be held to consider it held")]
+    [Range(0, 25)]
+    public int inputHeldLength;
+
+    [Range(0, 1)] public float deadZone;
+
+    [Range(0, 1)] public float lookSensitivity;
+
+    #endregion
+    
     #region DATAFIELDS
     
+    [Header("Input Data")]
+    [Tooltip("Currently Active Input Data Object, changes according to state machine of the player")]
     public InputData inputData;
+
+    public List<string> bindingsToSkip = new List<string>();
+    public List<string> mapsToSkip = new List<string>();
+
     private InputBuffer inputBuffer;
-    private PlayerInput inputSystem;
+    [HideInInspector] public PlayerInput inputSystem;
 
-    public Dictionary<string, Vector2> rawAxisContainer;
-    public Dictionary<string, bool> rawButtonContainer;
+    public GenericDictionary<string, Vector2> rawAxisContainer;
+    public GenericDictionary<string, bool> rawButtonContainer;
+    public GenericDictionary<string, Vector2> rawPassthroughContainer;
 
+    public GenericDictionary<string, InputData> inputDataContainer;
     #endregion
     
     #region INPUTACTIONS_CALLBACKS
@@ -34,12 +55,17 @@ public class InputManager : EditorSingleton<InputManager>
         {
             rawAxisContainer[value.action.name] = value.ReadValue<Vector2>();
         }
+        else if (value.action.type == InputActionType.PassThrough)
+        {
+            rawPassthroughContainer[value.action.name] = value.ReadValue<Vector2>();
+        }
     }
 
     private void InitializeInputDictionaries()
     {
-        rawAxisContainer = new Dictionary<string, Vector2>();
-        rawButtonContainer = new Dictionary<string, bool>();
+        rawAxisContainer = new GenericDictionary<string, Vector2>();
+        rawButtonContainer = new GenericDictionary<string, bool>();
+        rawPassthroughContainer = new GenericDictionary<string, Vector2>();
 
         foreach (var inputAction in inputSystem.currentActionMap)
         {
@@ -51,7 +77,92 @@ public class InputManager : EditorSingleton<InputManager>
             {
                 rawAxisContainer[inputAction.name] = Vector2.zero;
             }
+            else if (inputAction.type == InputActionType.PassThrough)
+            {
+                rawPassthroughContainer[inputAction.name] = Vector2.zero;
+            }
         }
+    }
+
+    // Setup input data objects
+    
+    void InitializeInputData()
+    {
+#if UNITY_EDITOR
+        inputDataContainer = new GenericDictionary<string, InputData>();
+        string[] guids = AssetDatabase.FindAssets("t: InputData");
+
+        foreach (var GUID in guids)
+        {
+            InputData establishedInputData = AssetDatabase.LoadAssetAtPath<InputData>(AssetDatabase.GUIDToAssetPath(GUID));
+            
+            // We skip this map
+            if (mapsToSkip.Contains(establishedInputData.inputActionMap))
+                AssetDatabase.DeleteAsset(AssetDatabase.GUIDToAssetPath(GUID));
+            
+            if (!inputDataContainer.ContainsKey(establishedInputData.inputActionMap))
+                inputDataContainer[establishedInputData.inputActionMap] = establishedInputData;
+            else if (inputDataContainer.ContainsKey(establishedInputData.inputActionMap) &&
+                     inputDataContainer[establishedInputData.inputActionMap] == null)
+                inputDataContainer[establishedInputData.inputActionMap] = establishedInputData;
+            //else
+            //    AssetDatabase.DeleteAsset(AssetDatabase.GUIDToAssetPath(GUID));
+        }
+
+        // Find the map that's not there, and create its appropriate InputData object
+        foreach (var mapObject in inputSystem.actions.actionMaps)
+        {
+            string map = mapObject.name;
+            if (inputDataContainer.ContainsKey(map)) continue;
+            if (mapsToSkip.Contains(map)) continue;
+
+            Debug.Log("No Input Data Found For Input Map: " + map);
+            
+            /*
+            string objectName = "InputData_" + map.ToUpper();
+            InputData newInputData = ScriptableObject.CreateInstance<InputData>();
+            AssetDatabase.CreateAsset(newInputData, $"Assets/Data/Inputs/Input Definitions/{objectName}.asset");
+            newInputData.inputActionMap = mapObject.name;
+            newInputData.InitializeActionMap();
+            inputDataContainer[map] = newInputData;
+            AssetDatabase.SaveAssets();
+            */
+        }
+#endif
+    }
+
+    public void SwitchActionMap(string newMap)
+    {
+        if (inputData != null && newMap.Equals(inputData.inputActionMap)) return;
+        
+        inputSystem.SwitchCurrentActionMap(newMap);
+        if (mapsToSkip.Contains(newMap)) return;
+        
+        
+        inputData = inputDataContainer[newMap];
+        
+        // Reinitialize buffer for new input & dictionaries
+        InitializeInputDictionaries();
+    }
+
+    public bool SkipBinding(InputAction action)
+    {
+        var bindings = action.bindings.ToArray();
+        
+        foreach (var binding in bindings)
+        {
+            if (bindingsToSkip.Contains(binding.path)) return true;
+        }
+        
+        return false;
+    }
+
+    public void RegenerateInputData()
+    {
+        InitializeInputData();
+        
+        if (Application.isPlaying)
+            InitializeInputDictionaries();
     }
 
     #endregion
@@ -61,81 +172,80 @@ public class InputManager : EditorSingleton<InputManager>
     protected override void Awake()
     {
         base.Awake();
-        ReloadFields();
-
         if (!Application.isPlaying) return;
-        
-        inputSystem = GetComponent<PlayerInput>();
+
+        inputData = inputDataContainer[inputSystem.currentActionMap.name];
         InitializeInputDictionaries();
         inputBuffer = new InputBuffer();
-        inputBuffer.InitializeBuffer();
-    }
-    
-    private void OnEnable()
-    {
-        //AssemblyReloadEvents.afterAssemblyReload += ReloadFields;
-        //AssemblyReloadEvents.afterAssemblyReload += Awake;
-    }
-
-    private void OnDisable()
-    {
-        //AssemblyReloadEvents.afterAssemblyReload -= ReloadFields;
-        //AssemblyReloadEvents.afterAssemblyReload -= Awake;
     }
 
     // Fixed Update never called in editor
     private void FixedUpdate()
     {
-        inputBuffer.Update();
+        if (inputData == null) inputData = inputDataContainer[inputSystem.currentActionMap.name];
+        else inputBuffer.UpdateBuffer();
     }
+    
 
     #endregion
 
     #region Utilities
 
-    public void ReloadFields()
-    {
-#if UNIT_EDITOR
-        string[] guids = AssetDatabase.FindAssets("t: InputData");
-            
-        inputData = AssetDatabase.LoadAssetAtPath<InputData>(AssetDatabase.GUIDToAssetPath(guids[0]));
-#endif
-    }
-    
     public InputBuffer GetInputBuffer()
     {
         return inputBuffer;
     }
 
-    public void PrintMessage(string s) => Debug.Log(s);
+    public List<string> GetInputMaps()
+    {
+        List<string> maps = new List<string>();
+
+        foreach (var map in inputDataContainer.Keys)
+        {
+            if (mapsToSkip.Contains(map)) continue;
+            maps.Add(map);
+        }
+
+        return maps;
+    }
+
+    public List<string> GetAllInputMaps()
+    {
+        List<string> maps = new List<string>();
+
+        foreach (var map in inputSystem.actions.actionMaps)
+        {
+            maps.Add(map.name);
+        }
+
+        return maps;
+    }
 
     #endregion
 
     #region Check Input
 
+    // These dont really respect the fact that we're using a buffer
     public bool IsInputHeld(InputCommand command)
     {
-
-        return false;
+        Debug.Log("Input Status: " + command.input);
+        return inputBuffer.buffer.Front().inputsFrameState[command.input].hold > inputHeldLength;
     }
 
     public bool IsHoldReleased(InputCommand command)
     {
         // First buffer frame state is non-zero but next frame state is zero
-        
-        return false;
+        return inputBuffer.buffer.Front().inputsFrameState[command.input].hold == 0;
     }
 
     public int HowLongIsInputHeld(InputCommand command)
     {
-
-        return 0;
+        return inputBuffer.buffer.Front().inputsFrameState[command.input].hold;
     }
     
     public bool IsInputPressed(InputCommand command)
     {
-
-        return false;
+        return inputBuffer.buffer.Front().inputsFrameState[command.input].hold > 0;
     }
 
     #endregion
@@ -144,7 +254,6 @@ public class InputManager : EditorSingleton<InputManager>
 
     public void UseInput(int input)
     {
-        if (inputBuffer.buffer == null || inputBuffer.buttonCommandCheck == null) inputBuffer.InitializeBuffer();
         inputBuffer.UseInput(input);
     }
 
@@ -158,77 +267,33 @@ public class InputManager : EditorSingleton<InputManager>
     /// <returns></returns>
     public bool CheckInputCommand(InputCommand command)
     {
-        Debug.Log("Button Frame State: " + inputBuffer.buttonCommandCheck[command.input]);
         
-        if (inputBuffer.buttonCommandCheck[command.input] < 0) return false;
-        if (inputBuffer.motionCommandCheck[command.motionCommand] < 0) return false;
+        if (inputBuffer.buttonInputCurrentState[command.input] < 0) return false;
+        if (inputBuffer.motionInputCurrentState.Count != 0 && inputBuffer.motionInputCurrentState[command.motionCommand] < 0) return false;
 
         return true;
+    }
+
+    public bool IsInputNone(InputCommand command)
+    {
+        return (inputData.rawInputs[command.input].inputType == RawInput.InputType.IGNORE);
     }
 
     #endregion
     public Vector3 GetNormalizedStickInput()
     {
+        if (!rawAxisContainer.ContainsKey("Movement")) return Vector3.zero;
+        
         Vector2 movementInput = rawAxisContainer["Movement"];
         return Vector3.ClampMagnitude(new Vector3(movementInput.x, 0f, movementInput.y), 1);
     }
 
     public Vector3 GetLookInput()
     {
+        if (!rawAxisContainer.ContainsKey("Look")) return Vector3.zero;
+        
         Vector3 lookInput = rawAxisContainer["Look"];
-        return Vector3.ClampMagnitude(lookInput, 1);
+        return Vector3.ClampMagnitude(lookInput, 1) * lookSensitivity;
     }
-
-
-    #region Debug UI
-
-    void OnGUI()
-    {
-        Debug.Log("Being Called");
-        Debug.Log("Null Buffer? " + (inputBuffer == null));
-        if (Application.isPlaying && inputBuffer != null)
-        {
-            int xSpace = 25;
-            int ySpace = 15;
-            //GUI.Label(new Rect(10, 10, 100, 20), "Hello World!");
-            for (int i = 0; i < inputBuffer.buttonCommandCheck.Count; i++)
-            {
-                GUI.Label(new Rect(10f + (i * xSpace), 15f, 100, 20),
-                    inputBuffer.buttonCommandCheck[i].ToString());
-            }
-
-            for (int b = 0; b < inputBuffer.buffer.Count; b++)
-            {
-                //GUI.Label(new Rect(xSpace - 10f, b * ySpace, 100, 20), b.ToString() + ":");
-                for (int i = 0; i < inputBuffer.buffer[b].rawInputs.Count; i++)
-                {
-                    if (inputBuffer.buffer[b].rawInputs[i].used)
-                    {
-                        GUI.Label(new Rect(10f + (i * xSpace), 35f + (b * ySpace), 100, 20),
-                            inputBuffer.buffer[b].rawInputs[i].hold.ToString("0") + ">");
-                    }
-                    else
-                    {
-                        GUI.Label(new Rect(10f + (i * xSpace), 35f + (b * ySpace), 100, 20),
-                            inputBuffer.buffer[b].rawInputs[i].hold.ToString("0"));
-                    }
-                }
-            }
-
-            for (int m = 0; m < inputBuffer.motionCommandCheck.Count; m++)
-            {
-                GUI.Label(new Rect(500f - 25f, m * ySpace, 100, 20),
-                    inputBuffer.motionCommandCheck[m].ToString());
-                GUI.Label(new Rect(500f, m * ySpace, 100, 20), inputData.motionCommands[m].name);
-
-            }
-
-            // CHANGE THE CURRENT MOVE LIST CHARACTER INDEX IT IS CURRENTLY TEMPORARY AND SET TO DEFAULT
-            //GUI.Label(new Rect(600f, 10f, 100, 20), CurrentMoveList(0).name.ToString());
-
-        }
-    }
-
-    #endregion
     
 }

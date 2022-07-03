@@ -1,4 +1,5 @@
 using System;
+using Cinemachine;
 using KinematicCharacterController;
 using KinematicCharacterController.Examples;
 using Unity.VisualScripting;
@@ -12,15 +13,21 @@ public class PlayerStateManager : StateManager
 
     private static readonly int Speed = Animator.StringToHash("Speed");
     private static readonly int Grounded = Animator.StringToHash("Grounded");
+    private static readonly int LeftWall = Animator.StringToHash("Left Wall");
+    private static readonly int RightWall = Animator.StringToHash("Right Wall");
+
     #endregion
     
     // Used to update Debug UI
     [Header("Events Raised")]
     [SerializeField] public StringEvent OnStateChangedEvent;
     [SerializeField] public StringEvent OnStateMachineChangedEvent;
-    
+    [SerializeField] public StringEvent OnSpeedChangedEvent;
+    [SerializeField] public StringEvent OnStateTimeChangeEvent;
     [Header("Managers Required")]
     [HideInInspector] public GameObject characterObject;
+
+    [SerializeField] public CinemachineFreeLook _camera;
 
     #region Monobehaviors
 
@@ -28,6 +35,7 @@ public class PlayerStateManager : StateManager
     {
         characterObject = this.gameObject;
         DataManager.Instance.mainCharacter = this;
+        _playerCharacterController = GetComponent<CharacterController>();
         base.Start();
     }
 
@@ -42,6 +50,10 @@ public class PlayerStateManager : StateManager
     /// </summary>
     protected override void UpdateStateMachine()
     {
+        // DEBUG PASS IN SPEED
+        OnStateTimeChangeEvent.Raise(currentStateTime.ToString());
+        OnSpeedChangedEvent.Raise(Mathf.RoundToInt(characterController.Motor.BaseVelocity.magnitude).ToString());
+        
         // Should make it that if cancellible, can't auto-go to NONE input states?
         // Could also make this return a bool whether or not a new state was found
         if (!canCancel) return;
@@ -50,7 +62,7 @@ public class PlayerStateManager : StateManager
 
         //GetStateMachine();
         StateInstance nextState = null;
-        StateInstance curEntryState = currentStateMachine.stateInstances[currentStateMachine.entryStateInstances[0]];
+        StateInstance curEntryState = currentStateMachine.stateInstances[currentStateMachine.entryState];
         InputCommand nextCommand = null;
         int nextStateMachine = -1;
         
@@ -75,15 +87,28 @@ public class PlayerStateManager : StateManager
                 foreach (var followUp in followUpChecks)
                 {
                     StateInstance followUpState = currentStateMachine.stateInstances[followUp.Key];
+                    
+                    // Ensure dictionary properly setup
+                    if (!coolDownContainer.ContainsKey(_character.characterStates[followUpState.command.state].stateName)) 
+                        coolDownContainer.Add(_character.characterStates[followUpState.command.state].stateName, true);
+                    
                     // Check NumTimesEntered condition
                     if (followUpState.limitTimesToEnter &&
-                        followUpState.numTimesEntered == followUpState.numTimesToEnter) continue;
+                        numTimesEnteredContainer[followUpState.ID] == followUpState.numTimesToEnter) continue;
+                    if (_character.characterStates[followUpState.command.state].hasCoolDown && !coolDownContainer[_character.characterStates[followUpState.command.state].stateName]) continue;
+                    
+                    // Check if state is unlocked
+                    if (_character.characterStates[followUpState.command.state].isUnlockable &&
+                        !_character.characterStates[followUpState.command.state].stateUnlocked) continue;
                     
                     TransitionCondition followUpCondition = followUp.Value;
-                    
-                    if (InputManager.Instance.CheckInputCommand(followUpState.command) && (followUpCondition == null || followUpCondition.CheckConditions(this)))
+
+                    if (currentStateDefinition.strict &&
+                        InputManager.Instance.IsInputNone(followUpState.command)) continue;
+
+                        if (InputManager.Instance.CheckInputCommand(followUpState.command) && (followUpCondition == null || followUpCondition.CheckConditions(this)))
                     {
-                        if (!(followUpState.priority > currentPriority)) continue;
+                        if (!(followUpState.priority >= currentPriority)) continue;
 
                         if (followUpState.toOtherCommandState)
                         {
@@ -119,6 +144,10 @@ public class PlayerStateManager : StateManager
     protected override void StartState(StateInstance _state, StateMachine _stateMachine = null)
     {
         base.StartState(_state, _stateMachine);
+        // Update Input Managers current input data
+        if (InputManager.Instance == null) Debug.Log("Null Instance!");
+        InputManager.Instance.SwitchActionMap(currentStateMachine.inputData.inputActionMap);
+        
         OnStateChangedEvent.Raise(_character.characterStates[_state.command.state].stateName);
         OnStateMachineChangedEvent.Raise(currentStateMachine.stateName);
     }
@@ -128,14 +157,23 @@ public class PlayerStateManager : StateManager
     protected override void UpdateAnimation()
     {
         base.UpdateAnimation();
-        myAnimator.SetFloat(Speed, characterController.Motor.BaseVelocity.onlyXZ().magnitude / characterController.movementData.maxStableMoveSpeed);
 
+        float rawSpeed = Mathf.Abs(characterController.Motor.BaseVelocity.onlyXZ().magnitude);
+        float animSpeed = 0;
+        if (rawSpeed < 1) animSpeed = 0;
+        else animSpeed = rawSpeed / 25;
+        
+        myAnimator.SetFloat(Speed, animSpeed);
+        myAnimator.SetBool(LeftWall, environmentListener.wallListener.leftWallEncountered);
+        myAnimator.SetBool(RightWall, environmentListener.wallListener.rightWallEncountered);
+        
+        
         if (characterController.Motor.GroundingStatus.IsStableOnGround)
         {
-            myAnimator.SetFloat(Grounded, groundingLerp = Mathf.Lerp(groundingLerp, 1, lerpSpeed*Time.fixedDeltaTime));
+            myAnimator.SetFloat(Grounded, 1);
         }
         else 
-            myAnimator.SetFloat(Grounded, groundingLerp = Mathf.Lerp(groundingLerp, 0, lerpSpeed*Time.fixedDeltaTime));
+            myAnimator.SetFloat(Grounded, 0);
 
         //myAnimator.SetFloat(Grounded, characterController.Motor.GroundingStatus.IsStableOnGround ? 1 : 0);
     }

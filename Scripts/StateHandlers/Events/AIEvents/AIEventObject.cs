@@ -2,10 +2,10 @@
 using System.Linq;
 using System.Reflection;
 
-public class PlayerEventObject : StateEventObject
+public class AIEventObject : StateEventObject
 {
-    protected PlayerStateManager _playerStateManager;
-    public void Invoke(PlayerStateManager _stateManager, List<object> parameters)
+    protected AIStateManager _aiStateManager;
+    public void Invoke(AIStateManager _stateManager, List<object> parameters)
     {
         MethodInfo eventFunction = GetType().GetMethod("Execute");
         

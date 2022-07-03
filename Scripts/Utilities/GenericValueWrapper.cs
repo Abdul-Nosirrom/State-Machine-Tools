@@ -11,7 +11,8 @@ public enum ValueTypes
     VECTOR3,
     VECTOR2,
     CURVE,
-    TEX2D
+    TEX2D,
+    VOIDEVENT
 }
 
 [System.Serializable]
@@ -26,7 +27,9 @@ public class GenericValueWrapper
     public Vector3 vec3Val;
     public Vector2 vec2Val;
     public AnimationCurve curveVal;
+    public VoidEvent voidEventVal;
     public Texture2D textureVal;
+    public CharacterState stateVal;
 
     public GenericValueWrapper()
     {
@@ -52,6 +55,8 @@ public class GenericValueWrapper
                 return curveVal;
             case ValueTypes.TEX2D:
                 return textureVal;
+            case ValueTypes.VOIDEVENT:
+                return voidEventVal;
             default:
                 return null;
         }
@@ -99,6 +104,12 @@ public class GenericValueWrapper
         {
             valueType = ValueTypes.TEX2D;
             Value = textureVal;
+            return true;
+        }
+        if (type == typeof(VoidEvent) && voidEventVal != null)
+        {
+            valueType = ValueTypes.VOIDEVENT;
+            Value = voidEventVal;
             return true;
         }
 
